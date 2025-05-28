@@ -19,12 +19,22 @@ calculating the highest betweenness centrality value for each network.
 Ensures start/end points are always on actual roads. Better represents 
 perceived community centers than geometric centroids.
 
-## Road Network Data
-Uses swissTLM3D dataset with the following road categories:
+## Data Sources
+The data used in this project is provided by the Federal Office of Topography swisstopo.
+©swisstopo
+
+swissTLM3D dataset with the following road categories:
 
 -   Highways (Autobahn, Autostrasse) Various road widths (3m, 4m, 6m, 8m, 10m roads) 
 -   Access roads (Einfahrt, Ausfahrt, Zufahrt, Dienstzufahrt) 
 -   Connections and service areas
+
+swissBOUNDARIES3D:
+-   tlm_landesgebiet
+-   tlm_hoheitsgebiet
+
+Amtliches Ortschaftenverzeichnis
+-   AMTOVZ_ZIP
 
 ## Data Processing
 
