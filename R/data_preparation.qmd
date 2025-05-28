@@ -23,6 +23,7 @@ conflict_prefer("select", "dplyr")
 
 # preprocess roads
 ```{r}
+# NOTE: External dataset, not included in repo. Download from swisstopo if needed.
 roads <- st_read("/Users/michafranz/Desktop/_Projekte/Geodaten/swisstlm3d_2024-03_2056_5728.shp/TLM_STRASSEN/swissTLM3D_TLM_STRASSE.shp") %>% st_zm() %>% st_transform(2056) %>% 
   select(WANDERWEGE, OBJEKTART, OBJEKTART, UUID, RICHTUNGSG, geometry)
 
@@ -44,7 +45,7 @@ st_write(roads_filtered, here("data","roads" , "roads_befahrbar.gpkg"), delete_l
 compare_crs()
 ```
 
-processing gemeinden & plz, merge equal ID, remove zones from other nations, identify grenzgemeinden / grenzplz
+# processing gemeinden & plz, merge equal ID, remove zones from other nations, identify grenzgemeinden / grenzplz
 ```{r}
 plz <- st_read(here("data","source_data", "AMTOVZ_SHP_LV95", "AMTOVZ_ZIP.shp")) %>% st_transform(2056)
 gemeinden <- st_read(here("data","source_data", "swissBOUNDARIES3D_1_5_LV95_LN02.gpkg"), layer = "tlm_hoheitsgebiet") %>% st_zm() %>% dplyr::filter(icc=="CH")
@@ -153,7 +154,7 @@ st_write(gemeinden_landesgrenze, here("data", "gemeinden", "gemeinden_processed.
 
 ```
 
-# 
+# write csv containing informative attributes
 ```{r}
 plz <- st_read(here("data","plz" ,"plz_processed.gpkg")) 
 gemeinden <- st_read(here("data", "gemeinden", "gemeinden_processed.gpkg"))
@@ -309,11 +310,3 @@ plz_join_wgs_84 <- plz_join %>% st_transform(4326)
 st_write(plz_join_wgs_84, here("pyscripts", "data", "input","plz_centers_wgs84.gpkg"), delete_dsn = TRUE)
 st_write(gemeinden_join_wgs_84, here("pyscripts", "data", "input", "gemeinden_centers_wgs84.gpkg"), delete_dsn = TRUE)
 ```
-
-
-```{r}
-compare_column_values(plz_centers, plz, "ZIP4")
-
-duplicated(gemeinden$bfs_nummer)
-```
-

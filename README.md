@@ -66,3 +66,5 @@ The following settings were used in the ORS config (`ors-config.yml`):
 -   Python 3.x
 -   R/RStudio
 -   openrouteservice Docker image
+
+Note: This project was part of a small task. It's not intended for reuse, but published here to document the workflow.

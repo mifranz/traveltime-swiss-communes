@@ -104,7 +104,7 @@ def get_directions(gpkg_path, origin, destination, attribute):
 
     gdf = gdf.drop(columns=['segments', 'way_points', 'summary'])
 
-    gdf.to_file(f"data/id_{origin}_to_{destination}.gpkg", driver="GPKG")
+    gdf.to_file(f"data/routes/id_{origin}_to_{destination}.gpkg", driver="GPKG")
     print(f"plzID_{origin}_to_{destination}.gpkg")
     return
 def bundle_segments(matrix):
