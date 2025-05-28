@@ -42,7 +42,8 @@ Preprocessing:
 - RStudio  
     - Network Analysis: Betweenness centrality calculation for each municipality/postal zone.  
     - Exclusions: Unreachable areas, lakes, and Liechtenstein postal zones.  
-Routing: Local openrouteservice instance via Docker, requested through Python.
+    
+- Routing: Local openrouteservice instance via Docker, requested through Python.
 
 
 ## Requirements
