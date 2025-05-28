@@ -6,6 +6,10 @@ from shapely import count_coordinates
 from datetime import datetime
 import os
 
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 # select type
 zone_type = "plz"
 
