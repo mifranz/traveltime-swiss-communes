@@ -1,0 +1,319 @@
+---
+title: "Template"
+format: html
+editor: visual
+---
+
+```{r}
+source("/Users/michafranz/Desktop/_Projekte/helper_functions.R")
+library(terra)
+library(here)
+library(sf)
+library(mapview)
+library(raster)
+library(sfnetworks)
+library(igraph)
+library(tidygraph)
+library(pbapply)
+library(dplyr)
+library(conflicted)
+conflict_prefer("filter", "dplyr")
+conflict_prefer("select", "dplyr")
+```
+
+# preprocess roads
+```{r}
+roads <- st_read("/Users/michafranz/Desktop/_Projekte/Geodaten/swisstlm3d_2024-03_2056_5728.shp/TLM_STRASSEN/swissTLM3D_TLM_STRASSE.shp") %>% st_zm() %>% st_transform(2056) %>% 
+  select(WANDERWEGE, OBJEKTART, OBJEKTART, UUID, RICHTUNGSG, geometry)
+
+roads_filtered <- roads %>%
+  filter(
+    !OBJEKTART %in% c(
+      "1m Weg", "1m Wegfragment", "2m Weg", "2m Wegfragment", "Klettersteig", "Autozug", "Dienszufahrt", "Provisorium" ,"Platz" ,"Markierte Spur", "Faehre"
+    ) & OBJEKTART != "Falsch"
+  )
+
+wegtypen <- c(
+  "10m Strasse",
+  "3m Strasse", "4m Strasse", "6m Strasse", "8m Strasse",
+  "Ausfahrt", "Autobahn", "Autostrasse", "Dienstzufahrt",
+  "Einfahrt", "Raststaette", "Verbindung", "Zufahrt"
+)
+st_write(roads_filtered, here("data","roads" , "roads_befahrbar.gpkg"), delete_layer = TRUE)
+```
+
+processing gemeinden & plz, merge equal ID, remove zones from other nations, identify grenzgemeinden / grenzplz
+```{r}
+plz <- st_read(here("data","source_data", "AMTOVZ_SHP_LV95", "AMTOVZ_ZIP.shp")) %>% st_transform(2056)
+gemeinden <- st_read(here("data","source_data", "swissBOUNDARIES3D_1_5_LV95_LN02.gpkg"), layer = "tlm_hoheitsgebiet") %>% st_zm() %>% dplyr::filter(icc=="CH")
+schweizer_grenze <- st_read(here("data","source_data", "swissBOUNDARIES3D_1_5_LV95_LN02.gpkg"), layer = "tlm_landesgebiet") %>% dplyr::filter(icc=="CH") %>% st_zm()
+liechtenstein <- st_read(here("data","source_data", "swissBOUNDARIES3D_1_5_LV95_LN02.gpkg"), layer = "tlm_landesgebiet") %>% dplyr::filter(icc=="LI") %>% st_zm() %>% st_buffer(-20)
+
+roads_processed <-  st_read(here("data","roads" , "roads_befahrbar.gpkg"))
+
+# remove plz zones from liechtenstein
+plz_only_ch <- check_spatial_relationship(plz, liechtenstein, st_intersects, "LI") %>% filter(LI == FALSE)
+
+# some polygons have the same plz and are merged
+plz_merged <- plz_only_ch %>%
+  group_by(ZIP4) %>%
+  summarise(geometry = st_union(geometry)) %>%  # merge geometries
+  ungroup()
+
+# remove gemeinden only consisting of lakes
+gemeinden_no_lakes <- gemeinden %>% 
+  filter(see_flaeche != gem_flaeche)
+
+gemeinden_lakes <- gemeinden %>% 
+  filter(see_flaeche == gem_flaeche)
+
+# identify polygons bordering foreign nations and add info as col
+schweizer_grenze_neg_buffer <- st_buffer(schweizer_grenze, -20)
+plz_landesgrenze <- check_spatial_relationship(plz_merged, schweizer_grenze_neg_buffer, st_within, "grenz_plz")
+plz_landesgrenze$id <- row_number(plz_landesgrenze)
+gemeinden_landesgrenze <- check_spatial_relationship(gemeinden_no_lakes, schweizer_grenze_neg_buffer, st_within, "grenz_gemeinde") 
+
+# plz that border germany at Bodensee or France at Genfersee need to be marked as they are technically bordering plz
+see_grenzen_plz <- c(
+  1006, 1007, 1009, 1025, 1028, 1070, 1071, 1094, 1095, 1096,
+  1110, 1131, 1162, 1164, 1165, 1166, 1180, 1195, 1196, 1197,
+  1260, 1296, 1297, 1298, 1299, 1800, 1802, 1803, 8264, 8265,
+  8266, 8267, 8268, 8272, 8273, 8590, 8592, 8593, 8594, 8595,
+  8596, 8597, 8598, 8599, 9320, 9322, 9323, 9326, 9400, 9403,
+  9404, 9422
+)
+
+see_grenzen_gemeinden <- c(
+  4421, 4801, 4656, 5855, 4826, 5649, 5861, 3216, 5890, 5712,
+  4646, 4864, 3217, 4691, 4651, 4426, 4806, 5852, 5713, 5882,
+  5607, 5642, 5643, 4401, 3215, 5725, 3213, 5724, 6610, 5721,
+  4643, 5586, 5623, 5588, 4451, 4441, 5646, 5590, 4436, 4411,
+  5606, 4851, 5613, 5648, 5609, 5883, 4641, 5717, 5860, 5851,
+  5610
+)
+
+gemeinden_erreichbar <- c(6300) # Zermatt is the only commune not reachable by car
+
+plz_landesgrenze <- plz_landesgrenze %>%
+  mutate(see_grenze = ZIP4 %in% see_grenzen_plz)
+
+gemeinden_landesgrenze <- gemeinden_landesgrenze %>%
+  mutate(see_grenze = bfs_nummer %in% see_grenzen_gemeinden) %>% 
+  mutate(erreichbar = !bfs_nummer %in% erreichbar)
+
+# identify multipart polygons
+plz_landesgrenze$multipart <- sapply(st_geometry(plz_landesgrenze), function(geom) {
+  inherits(geom, "MULTIPOLYGON") && length(geom) > 1
+})
+
+# plzs need to be converted to lines in order to use intersection with streets
+plz_landesgrenze_line <- plz_landesgrenze %>% st_cast("MULTILINESTRING") %>% st_cast("LINESTRING")
+roads_union <- roads_processed %>% st_union() %>% st_as_sf()
+
+plz_erreichbar <-  check_spatial_relationship(plz_landesgrenze_line, roads_union, st_intersects, "erreichbar")
+# filter only erreichbar=FALSE for the join because of the Poly to Line conversion (that results in more rows, which complicates the join)
+
+plz_nicht_erreichbar <- plz_erreichbar %>% 
+  filter(erreichbar == FALSE | ZIP4 == 3920)# manually add Zermatt (has road access but its restricted)
+
+plz_nicht_erreichbar_toJoin <-plz_nicht_erreichbar %>% st_drop_geometry() %>% select(erreichbar, ZIP4)
+
+plz_landesgrenze_join <- plz_landesgrenze %>% left_join(plz_nicht_erreichbar_toJoin, by=c("ZIP4"))
+# set NA values to TRUE as only FALSE values where joined before
+plz_landesgrenze_join <- plz_landesgrenze_join %>%
+  mutate(erreichbar = is.na(erreichbar))
+
+attach_intersecting_values <- function(df1, df2, df2_col, new_col) {
+  n <- nrow(df1)
+  pb <- txtProgressBar(min = 0, max = n, style = 3)  # Initialize progress bar
+  
+  # Find intersections
+  intersections <- st_intersects(df1, df2)
+  
+  # Extract values with progress tracking
+  df1[[new_col]] <- sapply(seq_len(n), function(i) {
+    setTxtProgressBar(pb, i)  # Update progress bar
+    
+    if (length(intersections[[i]]) == 0) {
+      return(NA)  # No intersection → assign NA
+    } else {
+      return(paste(df2[[df2_col]][intersections[[i]]], collapse = ", "))  # Join multiple matches
+    }
+  })
+  return(df1)
+}
+
+plz_bfs <- attach_intersecting_values(plz_landesgrenze_join, gemeinden_landesgrenze %>% st_buffer(-20), "bfs_nummer", "bfs_nummer")
+
+# clear attributes
+plz_bfs <- plz_bfs %>% select(-c("id"))
+gemeinden_landesgrenze <- gemeinden_landesgrenze %>% select(bfs_nummer, name, grenz_gemeinde, see_grenze, erreichbar)
+
+st_write(plz_bfs, here("data","plz" ,"plz_processed.gpkg"), delete_layer = TRUE)
+st_write(gemeinden_landesgrenze, here("data", "gemeinden", "gemeinden_processed.gpkg"), delete_layer = TRUE)
+
+```
+
+# 
+```{r}
+plz <- st_read(here("data","plz" ,"plz_processed.gpkg")) 
+gemeinden <- st_read(here("data", "gemeinden", "gemeinden_processed.gpkg"))
+
+plz_csv <- plz %>% st_drop_geometry()
+gemeinden_csv <- gemeinden %>% st_drop_geometry()
+
+write.csv(plz_csv, here("data", "plz", "plz_attributes.csv"))
+write.csv(gemeinden_csv, here("data", "gemeinden", "gemeinden_attributes.csv"))
+```
+
+
+
+
+# generate centroids
+```{r}
+plz <- st_read(here("data","plz" ,"plz_processed.gpkg"))
+gemeinden <- st_read(here("data","gemeinden" ,"gemeinden_processed.gpkg"))
+
+plz_centroids <- st_centroid(plz)
+gemeinden_centroids <- st_centroid(gemeinden)
+
+st_write(plz_centroids, here("data", "plz", "plz_centroids.gpkg"), delete_layer = TRUE)
+st_write(gemeinden_centroids, here("data", "gemeinden", "gemeinden_centroids.gpkg"), delete_layer = TRUE)
+```
+
+# roads intersection
+```{r}
+plz <- st_read(here("data","plz" ,"plz_processed.gpkg"))
+gemeinden <- st_read(here("data", "gemeinden", "gemeinden_processed.gpkg"))
+roads <- st_read(here("data", "roads", "roads_befahrbar.gpkg")) %>% st_transform(2056)
+
+# in some cases (line crossing a polygon several times) the intersection does not work properly and these roads are missing. that effect is neglected.
+road_gemeinden <- st_intersection(roads, gemeinden %>% select(bfs_nummer, name))
+road_gemeinden <- road_gemeinden[st_geometry_type(road_gemeinden) == "LINESTRING", ]
+
+road_plz <- st_intersection(roads, plz %>% select(ZIP4))
+road_plz <- plz_gemeinden[st_geometry_type(plz_gemeinden) == "LINESTRING", ]
+
+st_write(road_gemeinden, here("data","roads" , "roads_befahrbar_intersected_bfs.gpkg"), delete_dsn = TRUE)
+st_write(road_plz, here("data","roads" , "roads_befahrbar_intersected_plz.gpkg"), delete_dsn = TRUE)
+```
+
+# centrality
+```{r}
+ # read data in
+roads_plz <- st_read(here("data","roads" ,"roads_befahrbar_intersected_plz.gpkg")) %>% st_zm()
+roads_gemeinden <- st_read(here("data","roads" ,"roads_befahrbar_intersected_bfs.gpkg")) %>% st_zm()
+plz <- st_read(here("data","plz" ,"plz_processed.gpkg"))
+gemeinden <- st_read(here("data", "gemeinden", "gemeinden_processed.gpkg"))
+
+calculate_betweenness <- function(roads, filter_attribute, filter_value) {
+  roads_filtered <- roads %>% filter(get(filter_attribute) == filter_value) %>% st_cast("LINESTRING")
+  network <- tryCatch({
+    as_sfnetwork(roads_filtered, directed = FALSE) %>%
+      activate("edges") %>%
+      mutate(weight = edge_length()) %>%
+      activate("nodes") %>%
+      mutate(node_betweenness = centrality_betweenness(weights = weight, directed = FALSE)) %>%
+      st_as_sf()
+  }, error = function(e) {
+    message("Error in calculating betweenness centrality: ", e$message)
+    return(NULL)
+  })
+
+  if (is.null(network)) {
+    message("Network is NULL for", filter_value, ". Skipping.")
+    return(NULL)
+  } else{
+    
+    network <- network %>% mutate(!!filter_attribute := filter_value)
+    highest_betweenness <- network[which.max(network$node_betweenness), ]
+    return(highest_betweenness)
+  }
+}
+
+# run analysis for only one plz
+betweenness_one_plz <- calculate_betweenness(roads_plz, "ZIP4" ,"8002")
+#mapview(betweenness_one_plz, col.regions="red") + mapview(roads_plz %>% filter(ZIP4 == 8002))
+
+betweenness_one_gemeinde <- calculate_betweenness(roads_gemeinden, "bfs_nummer" ,"2275")
+#mapview(betweenness_one_gemeinde, col.regions="red") + mapview(roads_gemeinden %>% filter(bfs_nummer == 2275))
+
+calculate_betweenness_all <- function(roads, zone_id_attr) {
+  
+  zone_ids <- unique(roads[[zone_id_attr]])
+
+  # progressbar to track progress of longer running function
+  n <- length(zone_ids)
+  pb <- txtProgressBar(min = 0, max = n, style = 3)
+  
+  # Apply the calculate_betweenness function to each zip code
+  results <- lapply(1:n, function(i) {
+    zone_id <- zone_ids[i]
+    setTxtProgressBar(pb, i)  
+    calculate_betweenness(roads, zone_id_attr, zone_id)
+  })
+  
+  # combine results
+  results_combined <- do.call(rbind, results)
+  results_combined %>% select(-c("node_betweenness"))
+  return(results_combined)
+}
+
+# run analysis for multiple plz
+
+betweenness_plz_all <- calculate_betweenness_all(roads_plz, "ZIP4")
+betweenness_gemeinden_all <- calculate_betweenness_all(roads_gemeinden, "bfs_nummer")
+
+st_write(betweenness_plz_all, here("data", "plz", "plz_centers.gpkg"), delete_layer = TRUE)
+st_write(betweenness_gemeinden_all, here("data", "gemeinden", "gemeinden_centers.gpkg"), delete_layer = TRUE)
+```
+
+# attributes are joined to the centers of the zones and they are transformed to wgs84 (necessary for openroutingservice)
+```{r}
+plz <- st_read(here("data","plz" ,"plz_processed.gpkg"))
+gemeinden <- st_read(here("data", "gemeinden", "gemeinden_processed.gpkg"))
+
+plz_centers <- st_read(here("data", "plz", "plz_centers.gpkg"))
+gemeinden_centers <- st_read(here("data", "gemeinden", "gemeinden_centers.gpkg"))
+
+
+join_geodata <- function(base_data, join_data, 
+                         base_key, join_key, attributes = NULL) {
+  
+  # select attributes to join
+  if (is.null(attributes)) {
+    join_data_selected <- join_data
+  } else {
+    join_data_selected <- join_data %>% select(tidyselect::all_of(c(join_key, attributes)))
+  }
+
+  join_data_df <- st_drop_geometry(join_data_selected)
+  
+  joined_data <- base_data %>% 
+    left_join(join_data_df, by = setNames(join_key, base_key)) 
+  
+  return(joined_data)
+}
+
+gemeinden_join <- join_geodata(gemeinden_centers, gemeinden, "bfs_nummer", "bfs_nummer", c("grenz_gemeinde", "erreichbar"))
+plz_join <- join_geodata(plz_centers, plz, "ZIP4", "ZIP4", c("grenz_plz", "bfs_nummer", "erreichbar"))
+
+plz_join$ZIP4 <- as.integer(plz_join$ZIP4)
+
+# remove unreachable communes and PLZ zones 
+gemeinden_join <- gemeinden_join %>% filter(erreichbar == TRUE)
+plz_join <- plz_join %>% filter(erreichbar == TRUE)
+
+gemeinden_join_wgs_84 <- gemeinden_join %>% st_transform(4326)
+plz_join_wgs_84 <- plz_join %>% st_transform(4326)
+
+# for python processing
+st_write(plz_join_wgs_84, here("pyscripts", "data", "input","plz_centers_wgs84.gpkg"), delete_dsn = TRUE)
+st_write(gemeinden_join_wgs_84, here("pyscripts", "data", "input", "gemeinden_centers_wgs84.gpkg"), delete_dsn = TRUE)
+```
+
+
+```{r}
+compare_column_values(plz, plz_centers, "ZIP4")
+```
+
