@@ -20,6 +20,8 @@ calculating the highest betweenness centrality value for each network.
 Ensures start/end points are always on actual roads. Better represents 
 perceived community centers than geometric centroids. Excludes some communes
 and zones (unreachable, lakes etc.)
+The result is a origin destination matrix as csv containing the bfs_number/zip code
+and the start/end coordinates.
 
 ## Data Sources
 The data used in this project is provided by the Federal Office of Topography swisstopo.
