@@ -39,9 +39,9 @@ Amtliches Ortschaftenverzeichnis
 ## Data Processing
 
 Preprocessing: 
--   RStudio
-  -   Network Analysis: Betweenness centrality calculation for each municipality/postal zone.
-  -   Exclusions: Unreachable areas, lakes, and Liechtenstein postal zones.
+- RStudio  
+    - Network Analysis: Betweenness centrality calculation for each municipality/postal zone.  
+    - Exclusions: Unreachable areas, lakes, and Liechtenstein postal zones.  
 Routing: Local openrouteservice instance via Docker, requested through Python.
 
 
