@@ -4,10 +4,11 @@ A GIS-based analysis for calculating car travel times between all Swiss municipa
 
 ## Overview
 
-This project calculates approximately 18 million individual travel time 
+Calculation of approximately 18 million individual travel time 
 computations between Swiss municipalities (\~2,000) and postal code zones 
 (\~4,000) to quantify the concept of "local" for research on effects of local 
-business mergers.
+business mergers, meaning up to what travel time by car can a zone be considered
+as "local".
 
 ## Methodology
 
