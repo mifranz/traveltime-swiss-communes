@@ -44,6 +44,21 @@ Preprocessing:
 - RStudio  
     - Network Analysis: Betweenness centrality calculation for each municipality/postal zone.  
     - Exclusions: Unreachable areas, lakes, and Liechtenstein postal zones.  
+    
+Routing Configuration
+
+Routing was performed using a local Docker instance of [openrouteservice](https://github.com/GIScience/openrouteservice) 
+
+The following settings were used in the ORS config (`ors-config.yml`):
+
+- `source_file`: `switzerland-latest.osm.pbf`
+- `min_network_size`: 200
+- `maximum_distance`: 1,000,000
+- `maximum_snapping_radius`: 8,000
+- `maximum_routes` (matrix): 20,000,000
+- `maximum_visited_nodes` (matrix): 1,000,000,000
+- `maximum_search_radius` (matrix): 1,500
+- Enabled profile: `driving-car`
 
 ## Requirements
 
