@@ -19,7 +19,6 @@ timestamp = datetime.today().strftime('%Y-%m-%d')
 filename = f"data/matrices/{zone_type}_traveltimes{timestamp}.csv"
 
 # Set up headers for the API request
-#api_key = '5b3ce3597851110001cf62489b315fb177cd4d208a60bd2b9bf7df0f'
 headers = {
     'Accept': 'application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8',
     'Authorization': api_key,
