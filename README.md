@@ -17,7 +17,8 @@ Python scripts handle API requests and data processing.
 Calculates the most central point within each zone's road network, by 
 calculating the highest betweenness centrality value for each network. 
 Ensures start/end points are always on actual roads. Better represents 
-perceived community centers than geometric centroids.
+perceived community centers than geometric centroids. Excludes some communes
+and zones (unreachable, lakes etc.)
 
 ## Data Sources
 The data used in this project is provided by the Federal Office of Topography swisstopo.
@@ -42,9 +43,6 @@ Preprocessing:
 - RStudio  
     - Network Analysis: Betweenness centrality calculation for each municipality/postal zone.  
     - Exclusions: Unreachable areas, lakes, and Liechtenstein postal zones.  
-    
-- Routing: Local openrouteservice instance via Docker, requested through Python.
-
 
 ## Requirements
 
