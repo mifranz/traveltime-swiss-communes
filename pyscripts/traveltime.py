@@ -6,9 +6,12 @@ from shapely import count_coordinates
 from datetime import datetime
 import os
 
+# select type
+zone_type = "plz"
+
 # get timestamp
 timestamp = datetime.today().strftime('%Y-%m-%d')
-filename = f"data/matrices/durations_in_hours_{timestamp}.csv"
+filename = f"data/matrices/{zone_type}_traveltimes{timestamp}.csv"
 
 # Set up headers for the API request
 api_key = '5b3ce3597851110001cf62489b315fb177cd4d208a60bd2b9bf7df0f'
@@ -23,10 +26,7 @@ def calculate_travel_matrix(gpkg_path, output_csv, attribute):
     gdf = gpd.read_file(gpkg_path)
 
     filter_attribute = attribute
-    # gdf[filter_attribute] = gdf[filter_attribute].astype(int)
 
-    # gdf = gdf[(gdf[filter_attribute] < 8100) & (gdf[filter_attribute] > 8000)]
-    # gdf = gdf[gdf[filter_attribute] < 160]
     #gdf = gdf[gdf[filter_attribute].isin(id_codes)]
 
     # check layer type
@@ -92,7 +92,6 @@ def get_directions(gpkg_path, origin, destination, attribute):
     response = requests.post('http://localhost:8080/ors/v2/directions/driving-car/geojson', json=body,
                          headers=headers)
     response_json = response.json()
-    print(response_json)
 
     gdf = gpd.GeoDataFrame.from_features(response_json["features"],crs="EPSG:4326")
     gdf['duration_min'] = gdf["summary"][0]['duration'] / 60
@@ -146,17 +145,18 @@ def bundle_segments(matrix):
         print(f"Saved all {len(all_route_segments)} routes in a single layer in matrix_as_route.gpkg")
 
 # subset to test matrix
-id_codes = [3825, 8002, 3826, 8003, 8006]
+id_codes = [6584, 8002, 7438, 8003, 8006]
+# id_codes = [x for x in range(4000, 6000)]
 
-calculate_travel_matrix("data/input/plz_centers_wgs84.gpkg", filename, "ZIP4")
-
-#09:23
-
+calculate_travel_matrix(f"data/input/{zone_type}_centers_wgs84.gpkg", filename, "ZIP4")
+# runtime PLZ ca 1h15
+# runtime Gemeinden ca 30min
 
 # origin/destination for individual route calculations
-origin = 2767
-destination = 6300
-# get_directions("data/input/gemeinden_centers_wgs84.gpkg", origin,destination, "bfs_nummer")
+
+origin = 6584
+destination = 7438
+# get_directions(f"data/input/{zone_type}_centers_wgs84.gpkg", origin,destination, "ZIP4")
 
 # calculate and save all routes of a matrice as gpkg
 #bundle_segments(filename)

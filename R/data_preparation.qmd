@@ -5,7 +5,6 @@ editor: visual
 ---
 
 ```{r}
-source("/Users/michafranz/Desktop/_Projekte/helper_functions.R")
 library(terra)
 library(here)
 library(sf)
@@ -17,6 +16,7 @@ library(tidygraph)
 library(pbapply)
 library(dplyr)
 library(conflicted)
+library(myHelpers) # private package with supporting functions
 conflict_prefer("filter", "dplyr")
 conflict_prefer("select", "dplyr")
 ```
@@ -40,6 +40,8 @@ wegtypen <- c(
   "Einfahrt", "Raststaette", "Verbindung", "Zufahrt"
 )
 st_write(roads_filtered, here("data","roads" , "roads_befahrbar.gpkg"), delete_layer = TRUE)
+
+compare_crs()
 ```
 
 processing gemeinden & plz, merge equal ID, remove zones from other nations, identify grenzgemeinden / grenzplz
@@ -97,9 +99,9 @@ gemeinden_erreichbar <- c(6300) # Zermatt is the only commune not reachable by c
 plz_landesgrenze <- plz_landesgrenze %>%
   mutate(see_grenze = ZIP4 %in% see_grenzen_plz)
 
-gemeinden_landesgrenze <- gemeinden_landesgrenze %>%
+gemeinden_landesgrenze_mutate <- gemeinden_landesgrenze %>%
   mutate(see_grenze = bfs_nummer %in% see_grenzen_gemeinden) %>% 
-  mutate(erreichbar = !bfs_nummer %in% erreichbar)
+  mutate(erreichbar = !bfs_nummer %in% gemeinden_erreichbar)
 
 # identify multipart polygons
 plz_landesgrenze$multipart <- sapply(st_geometry(plz_landesgrenze), function(geom) {
@@ -110,18 +112,15 @@ plz_landesgrenze$multipart <- sapply(st_geometry(plz_landesgrenze), function(geo
 plz_landesgrenze_line <- plz_landesgrenze %>% st_cast("MULTILINESTRING") %>% st_cast("LINESTRING")
 roads_union <- roads_processed %>% st_union() %>% st_as_sf()
 
-plz_erreichbar <-  check_spatial_relationship(plz_landesgrenze_line, roads_union, st_intersects, "erreichbar")
-# filter only erreichbar=FALSE for the join because of the Poly to Line conversion (that results in more rows, which complicates the join)
+# needs manual inspection since multipart and donut hole geometries indicated no intersection with roads
+plz_road_intersection <-  check_spatial_relationship(plz_landesgrenze_line, roads_union, st_intersects, "erreichbar")
 
-plz_nicht_erreichbar <- plz_erreichbar %>% 
-  filter(erreichbar == FALSE | ZIP4 == 3920)# manually add Zermatt (has road access but its restricted)
+# Zermatt (has road access but its restricted) and Mürren/Gimmelwald (have roads connecting each other but not to the outside) manually added to list
+plz_erreichbar <- c(3801, 3823, 3825, 3826, 3920, 6356, 6441, 8784, 8878)
 
-plz_nicht_erreichbar_toJoin <-plz_nicht_erreichbar %>% st_drop_geometry() %>% select(erreichbar, ZIP4)
-
-plz_landesgrenze_join <- plz_landesgrenze %>% left_join(plz_nicht_erreichbar_toJoin, by=c("ZIP4"))
-# set NA values to TRUE as only FALSE values where joined before
-plz_landesgrenze_join <- plz_landesgrenze_join %>%
-  mutate(erreichbar = is.na(erreichbar))
+# filter unreachable PLZ zones after manual inspection
+plz_erreichbar_mutate <- plz_landesgrenze %>%
+  mutate(erreichbar = ifelse(ZIP4 %in% plz_erreichbar, FALSE, TRUE))
 
 attach_intersecting_values <- function(df1, df2, df2_col, new_col) {
   n <- nrow(df1)
@@ -143,11 +142,11 @@ attach_intersecting_values <- function(df1, df2, df2_col, new_col) {
   return(df1)
 }
 
-plz_bfs <- attach_intersecting_values(plz_landesgrenze_join, gemeinden_landesgrenze %>% st_buffer(-20), "bfs_nummer", "bfs_nummer")
+plz_bfs <- attach_intersecting_values(plz_erreichbar_mutate, gemeinden_landesgrenze %>% st_buffer(-20), "bfs_nummer", "bfs_nummer")
 
 # clear attributes
 plz_bfs <- plz_bfs %>% select(-c("id"))
-gemeinden_landesgrenze <- gemeinden_landesgrenze %>% select(bfs_nummer, name, grenz_gemeinde, see_grenze, erreichbar)
+gemeinden_landesgrenze <- gemeinden_landesgrenze_mutate %>% select(bfs_nummer, name, grenz_gemeinde, see_grenze, erreichbar)
 
 st_write(plz_bfs, here("data","plz" ,"plz_processed.gpkg"), delete_layer = TRUE)
 st_write(gemeinden_landesgrenze, here("data", "gemeinden", "gemeinden_processed.gpkg"), delete_layer = TRUE)
@@ -165,9 +164,6 @@ gemeinden_csv <- gemeinden %>% st_drop_geometry()
 write.csv(plz_csv, here("data", "plz", "plz_attributes.csv"))
 write.csv(gemeinden_csv, here("data", "gemeinden", "gemeinden_attributes.csv"))
 ```
-
-
-
 
 # generate centroids
 ```{r}
@@ -296,15 +292,17 @@ join_geodata <- function(base_data, join_data,
 }
 
 gemeinden_join <- join_geodata(gemeinden_centers, gemeinden, "bfs_nummer", "bfs_nummer", c("grenz_gemeinde", "erreichbar"))
+# removes three plz as they contain no roads and therefore no centrality value was calculated
 plz_join <- join_geodata(plz_centers, plz, "ZIP4", "ZIP4", c("grenz_plz", "bfs_nummer", "erreichbar"))
 
 plz_join$ZIP4 <- as.integer(plz_join$ZIP4)
 
 # remove unreachable communes and PLZ zones 
-gemeinden_join <- gemeinden_join %>% filter(erreichbar == TRUE)
+gemeinden_join_reachable <- gemeinden_join %>% filter(erreichbar == TRUE)
+gemeinden_join_f <- gemeinden_join %>% filter(erreichbar == FALSE)
 plz_join <- plz_join %>% filter(erreichbar == TRUE)
 
-gemeinden_join_wgs_84 <- gemeinden_join %>% st_transform(4326)
+gemeinden_join_wgs_84 <- gemeinden_join_reachable %>% st_transform(4326)
 plz_join_wgs_84 <- plz_join %>% st_transform(4326)
 
 # for python processing
@@ -314,6 +312,8 @@ st_write(gemeinden_join_wgs_84, here("pyscripts", "data", "input", "gemeinden_ce
 
 
 ```{r}
-compare_column_values(plz, plz_centers, "ZIP4")
+compare_column_values(plz_centers, plz, "ZIP4")
+
+duplicated(gemeinden$bfs_nummer)
 ```
 
