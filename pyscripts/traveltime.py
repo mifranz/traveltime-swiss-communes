@@ -2,13 +2,14 @@ import requests
 import csv
 import geopandas as gpd
 import pandas as pd
-from shapely import count_coordinates
+# from shapely import count_coordinates
 from datetime import datetime
 import os
-
-import os
 from dotenv import load_dotenv
+
 load_dotenv()
+api_key = os.getenv("API_KEY")
+
 
 # select type
 zone_type = "plz"
@@ -18,7 +19,7 @@ timestamp = datetime.today().strftime('%Y-%m-%d')
 filename = f"data/matrices/{zone_type}_traveltimes{timestamp}.csv"
 
 # Set up headers for the API request
-api_key = '5b3ce3597851110001cf62489b315fb177cd4d208a60bd2b9bf7df0f'
+#api_key = '5b3ce3597851110001cf62489b315fb177cd4d208a60bd2b9bf7df0f'
 headers = {
     'Accept': 'application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8',
     'Authorization': api_key,
@@ -152,7 +153,7 @@ def bundle_segments(matrix):
 id_codes = [6584, 8002, 7438, 8003, 8006]
 # id_codes = [x for x in range(4000, 6000)]
 
-calculate_travel_matrix(f"data/input/{zone_type}_centers_wgs84.gpkg", filename, "ZIP4")
+# calculate_travel_matrix(f"data/input/{zone_type}_centers_wgs84.gpkg", filename, "ZIP4")
 # runtime PLZ ca 1h15
 # runtime Gemeinden ca 30min
 
@@ -160,7 +161,7 @@ calculate_travel_matrix(f"data/input/{zone_type}_centers_wgs84.gpkg", filename, 
 
 origin = 6584
 destination = 7438
-# get_directions(f"data/input/{zone_type}_centers_wgs84.gpkg", origin,destination, "ZIP4")
+get_directions(f"data/input/{zone_type}_centers_wgs84.gpkg", origin,destination, "ZIP4")
 
 # calculate and save all routes of a matrice as gpkg
 #bundle_segments(filename)
